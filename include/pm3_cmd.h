@@ -550,6 +550,7 @@ typedef struct {
 #define CMD_HF_TEXKOM_SIMULATE                                            0x0320
 #define CMD_HF_ISO15693_EML_CLEAR                                         0x0330
 #define CMD_HF_ISO15693_EML_SETMEM                                        0x0331
+#define CMD_HF_ISO15693_EML_GETMEM                                        0x0332
 
 #define CMD_LF_SNIFF_RAW_ADC                                              0x0360
 
@@ -897,7 +898,7 @@ typedef struct {
 #define BL_VERSION_1_0_0    BL_MAKE_VERSION(1, 0, 0)
 
 /* CMD_READ_MEM_DOWNLOAD flags */
-#define CMD_READ_MEM_DOWNLOAD_RAW                    (1<<0)
+#define READ_MEM_DOWNLOAD_FLAG_RAW                   (1<<0)
 
 /* CMD_START_FLASH may have three arguments: start of area to flash,
    end of area to flash, optional magic.
