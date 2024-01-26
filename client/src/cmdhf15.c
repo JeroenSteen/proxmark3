@@ -783,10 +783,6 @@ static int NxpCheckSig(uint8_t *uid) {
         return PM3_ETIMEOUT;
     }
 
-    if (resp.status == PM3_ETEAROFF) {
-        return resp.status;
-    }
-
     if (resp.length < 2) {
         PrintAndLogEx(WARNING, "iso15693 card doesn't answer to READ SIGNATURE command");
         return PM3_EWRONGANSWER;
@@ -839,10 +835,6 @@ static int NxpSysInfo(uint8_t *uid) {
         return PM3_ETIMEOUT;
     }
 
-    if (resp.status == PM3_ETEAROFF) {
-        return resp.status;
-    }
-
     if (resp.length < 2) {
         PrintAndLogEx(WARNING, "iso15693 card doesn't answer to NXP systeminfo command");
         return PM3_EWRONGANSWER;
@@ -857,25 +849,47 @@ static int NxpSysInfo(uint8_t *uid) {
 
     PrintAndLogEx(INFO, "");
     PrintAndLogEx(INFO, "--- " _CYAN_("NXP Sysinfo"));
-    PrintAndLogEx(INFO, "  raw... %s", sprint_hex(d, 8));
-    PrintAndLogEx(INFO, "    " _CYAN_("Password protection configuration:"));
-    PrintAndLogEx(INFO, "      * Page L read%s password protected", ((d[2] & 0x01) ? "" : _GREEN_(" not")));
-    PrintAndLogEx(INFO, "      * Page L write%s password protected", ((d[2] & 0x02) ? "" : _GREEN_(" not")));
-    PrintAndLogEx(INFO, "      * Page H read%s password protected", ((d[2] & 0x10) ? "" : _GREEN_(" not")));
-    PrintAndLogEx(INFO, "      * Page H write%s password protected", ((d[2] & 0x20) ? "" : _GREEN_(" not")));
+    PrintAndLogEx(INFO, "RAW... %s", sprint_hex(d, 8));
+
+    PrintAndLogEx(INFO, "    " _CYAN_("Password protection configuration"));
+
+    PrintAndLogEx(INFO, "      * Page L read.... ( %s )"
+        , (d[2] & 0x01) ?  _RED_("password") : _GREEN_("no password")
+    );
+
+    PrintAndLogEx(INFO, "      * Page L write... ( %s )"
+        , (d[2] & 0x02) ?  _RED_("password") : _GREEN_("no password")
+    );
+
+    PrintAndLogEx(INFO, "      * Page H read.... ( %s )"
+        , (d[2] & 0x10) ?  _RED_("password") : _GREEN_("no password")
+    );
+
+    PrintAndLogEx(INFO, "      * Page H write... ( %s )"
+        , (d[2] & 0x20) ?  _RED_("password") : _GREEN_("no password")
+    );
 
     PrintAndLogEx(INFO, "    " _CYAN_("Lock bits"));
+
     // AFI lock bit
-    PrintAndLogEx(INFO, "      * AFI%s locked", ((d[3] & 0x01) ? "" : _GREEN_(" not")));
+    PrintAndLogEx(INFO, "      * AFI..... ( %s )"
+        , (d[3] & 0x01) ? _RED_("locked") : _GREEN_("unlocked")
+    );
 
     // EAS lock bit
-    PrintAndLogEx(INFO, "      * EAS%s locked", ((d[3] & 0x02) ? "" : _GREEN_(" not")));
+    PrintAndLogEx(INFO, "      * EAS..... ( %s )"
+        ,(d[3] & 0x02) ? _RED_("locked") : _GREEN_("unlocked")
+    );
 
     // DSFID lock bit
-    PrintAndLogEx(INFO, "      * DSFID%s locked", ((d[3] & 0x03) ? "" : _GREEN_(" not")));
+    PrintAndLogEx(INFO, "      * DSFID... ( %s )"
+        , (d[3] & 0x03) ? _RED_("locked") : _GREEN_("unlocked")
+    );
 
     // Password protection pointer address and access conditions lock bit
-    PrintAndLogEx(INFO, "      * Password protection configuration%s locked", ((d[3] & 0x04) ? "" : _GREEN_(" not")));
+    PrintAndLogEx(INFO, "      * Password protection configuration... ( %s )"
+        , (d[3] & 0x04) ? _RED_("locked") : _GREEN_("unlocked")
+    );
 
     PrintAndLogEx(INFO, "    " _CYAN_("Features"));
     PrintAndLogEx(INFO, "      * User memory password protection%s supported", ((d[4] & 0x01) ? "" : " not"));
@@ -960,19 +974,24 @@ static int CmdHF15Info(const char *Cmd) {
     packet->raw[packet->rawlen++] = arg_get_raw_flag(uidlen, unaddressed, scan, add_option);
     packet->raw[packet->rawlen++] = ISO15693_GET_SYSTEM_INFO;
 
-    if (scan) {
-        if (getUID(true, false, uid) != PM3_SUCCESS) {
-            PrintAndLogEx(WARNING, "no tag found");
-            free(packet);
-            return PM3_EINVARG;
+    if (unaddressed == false) {
+        if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
+            if (getUID(false, false, uid) != PM3_SUCCESS) {
+                PrintAndLogEx(WARNING, "no tag found");
+                free(packet);
+                return PM3_EINVARG;
+            }
+            uidlen = HF15_UID_LENGTH;
         }
-        uidlen = HF15_UID_LENGTH;
-    }
 
-    if (uidlen == HF15_UID_LENGTH) {
-        // add UID (scan, uid)
-        memcpy(packet->raw + packet->rawlen, uid, uidlen);
-        packet->rawlen += uidlen;
+        if (uidlen == HF15_UID_LENGTH) {
+            // add UID (scan, uid)
+            memcpy(packet->raw + packet->rawlen, uid, uidlen);
+            packet->rawlen += uidlen;
+        }
+    } else {
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     AddCrc15(packet->raw,  packet->rawlen);
@@ -993,10 +1012,6 @@ static int CmdHF15Info(const char *Cmd) {
         return PM3_ETIMEOUT;
     }
 
-    if (resp.status == PM3_ETEAROFF) {
-        return resp.status;
-    }
-
     if (resp.length < 2) {
         PrintAndLogEx(WARNING, "iso15693 card doesn't answer to systeminfo command (%d)", resp.length);
         return PM3_EWRONGANSWER;
@@ -1010,36 +1025,36 @@ static int CmdHF15Info(const char *Cmd) {
 
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(INFO, "--- " _CYAN_("Tag Information") " ---------------------------");
-    PrintAndLogEx(SUCCESS, "    TYPE... " _YELLOW_("%s"), getTagInfo_15(d + 2));
-    PrintAndLogEx(SUCCESS, "     UID... " _GREEN_("%s"), iso15693_sprintUID(NULL, uid));
-    PrintAndLogEx(SUCCESS, " SYSINFO... %s", sprint_hex(d, resp.length - 2));
+    PrintAndLogEx(SUCCESS, "UID....... " _GREEN_("%s"), iso15693_sprintUID(NULL, uid));
+    PrintAndLogEx(SUCCESS, "TYPE...... " _YELLOW_("%s"), getTagInfo_15(d + 2));
+    PrintAndLogEx(SUCCESS, "SYSINFO... %s", sprint_hex(d, resp.length - 2));
 
     // DSFID
     if (d[1] & 0x01)
-        PrintAndLogEx(SUCCESS, "     - DSFID supported        [0x%02X]", d[10]);
+        PrintAndLogEx(SUCCESS, "   - DSFID.......... 0x%02X", d[10]);
     else
-        PrintAndLogEx(SUCCESS, "     - DSFID not supported");
+        PrintAndLogEx(SUCCESS, "   - DSFID not supported");
 
     // AFI
     if (d[1] & 0x02)
-        PrintAndLogEx(SUCCESS, "     - AFI   supported        [0x%02X]", d[11]);
+        PrintAndLogEx(SUCCESS, "   - AFI............ 0x%02X", d[11]);
     else
-        PrintAndLogEx(SUCCESS, "     - AFI   not supported");
+        PrintAndLogEx(SUCCESS, "   - AFI not supported");
 
     // IC reference
     if (d[1] & 0x08)
-        PrintAndLogEx(SUCCESS, "     - IC reference supported [0x%02X]", d[14]);
+        PrintAndLogEx(SUCCESS, "   - IC reference... 0x%02X", d[14]);
     else
-        PrintAndLogEx(SUCCESS, "     - IC reference not supported");
+        PrintAndLogEx(SUCCESS, "   - IC reference not supported");
 
     // memory
     if (d[1] & 0x04) {
-        PrintAndLogEx(SUCCESS, "     - Tag provides info on memory layout (vendor dependent)");
+        PrintAndLogEx(SUCCESS, "   - Tag memory layout (vendor dependent)");
         uint8_t blocks = d[12] + 1;
         uint8_t size = (d[13] & 0x1F);
-        PrintAndLogEx(SUCCESS, "           %u (or %u) bytes/blocks x %u blocks", size + 1, size, blocks);
+        PrintAndLogEx(SUCCESS, "        " _YELLOW_("%u") " ( or " _YELLOW_("%u") " ) bytes/blocks x " _YELLOW_("%u") " blocks", size + 1, size, blocks);
     } else {
-        PrintAndLogEx(SUCCESS, "     - Tag does not provide information on memory layout");
+        PrintAndLogEx(SUCCESS, "   - N/A");
     }
 
     // Check if SLIX2 and attempt to get NXP System Information
@@ -1108,7 +1123,7 @@ static int CmdHF15Reader(const char *Cmd) {
     CLIParserFree(ctx);
 
     if (cm) {
-        PrintAndLogEx(INFO, "press " _GREEN_("<Enter>") " to exit");
+        PrintAndLogEx(INFO, "Press " _GREEN_("<Enter>") " to exit");
     }
     readHF15Uid(cm, true);
     return PM3_SUCCESS;
@@ -1183,9 +1198,9 @@ static int CmdHF15ELoad(const char *Cmd) {
     }
 
     if ((tag->pagesCount > ISO15693_TAG_MAX_PAGES) ||
-        ((tag->pagesCount * tag->bytesPerPage) > ISO15693_TAG_MAX_SIZE) ||
-        (tag->pagesCount == 0) ||
-        (tag->bytesPerPage == 0)) {
+            ((tag->pagesCount * tag->bytesPerPage) > ISO15693_TAG_MAX_SIZE) ||
+            (tag->pagesCount == 0) ||
+            (tag->bytesPerPage == 0)) {
         PrintAndLogEx(FAILED, "Tag size error: pagesCount=%d, bytesPerPage=%d",
                       tag->pagesCount, tag->bytesPerPage);
         free(tag);
@@ -1212,7 +1227,7 @@ static int CmdHF15ELoad(const char *Cmd) {
         }
 
         uint16_t bytestosend = MIN(chuncksize, bytes_read);
-        if (hf15EmlSetMem((uint8_t*)tag + offset, bytestosend, offset) != PM3_SUCCESS) {
+        if (hf15EmlSetMem((uint8_t *)tag + offset, bytestosend, offset) != PM3_SUCCESS) {
             PrintAndLogEx(FAILED, "Can't set emulator memory at offest: %zu / 0x%zx", offset, offset);
             free(tag);
             return PM3_ESOFT;
@@ -1272,42 +1287,35 @@ static int CmdHF15ESave(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+static const char dashes[] = "------------------------------------------------------------";
 static void print_hrule(int blocksize) {
-    char dashes[] = "------------------------------------------------------------";
-    PrintAndLogEx(INFO, "-----+%.*s-+-%.*s-", 3 * blocksize, dashes, blocksize, dashes);
+
+    int len = MAX(0, 3 * blocksize);
+    PrintAndLogEx(INFO, "-----+-%.*s+---+-%.*s-", len, dashes, blocksize, dashes);
 }
 
 // for emaulator and dump files we don't have lock info byte available.
-static void print_blocks_15693(uint8_t *data, uint16_t bytes, int blocksize, bool dense_output) {
-
-    PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(INFO, "----------- " _CYAN_("Tag Memory") " ---------------");
-
-    PrintAndLogEx(NORMAL, "");
-
-    if (blocksize == 0 || bytes == 0) {
-        PrintAndLogEx(INFO, "Tag is empty!");
-        return;
-    }
+static void print_blocks_15693(iso15_tag_t *tag, bool dense_output) {
+    uint8_t *d = tag->data;
+    int blocksize = tag->bytesPerPage;
 
     print_hrule(blocksize);
 
     char spaces[] = "                                                            ";
-    PrintAndLogEx(INFO, " blk | data %.*s| ascii", MAX(0, 3 * blocksize - 5), spaces);
+    PrintAndLogEx(INFO, " blk | data %.*s|lck| ascii", MAX(0, 3 * blocksize - 5), spaces);
     print_hrule(blocksize);
 
     bool in_repeated_block = false;
-    int blocks = (bytes / blocksize);
 
-    for (int i = 0; i < blocks; i++) {
+    for (int i = 0; i < tag->pagesCount; i++) {
 
-        uint8_t *blk = data + (i * blocksize);
+        uint8_t *blk = d + (i * blocksize);
 
         // suppress repeating blocks, truncate as such that the first and last block with the same data is shown
         // but the blocks in between are replaced with a single line of "......" if dense_output is enabled
         if (dense_output &&
-                (i > 6) &&
-                (i < (blocks - 1)) &&
+                (i > 3) &&
+                (i < (tag->pagesCount - 1)) &&
                 (in_repeated_block == false) &&
                 (memcmp(blk, blk - blocksize, blocksize) == 0) &&
                 (memcmp(blk, blk + blocksize, blocksize) == 0) &&
@@ -1318,53 +1326,56 @@ static void print_blocks_15693(uint8_t *data, uint16_t bytes, int blocksize, boo
             in_repeated_block = true;
             PrintAndLogEx(INFO, "  ......");
         } else if (in_repeated_block &&
-                   (memcmp(blk, blk + blocksize, blocksize) || i == blocks)
+                   (memcmp(blk, blk + blocksize, blocksize) || i == tag->pagesCount)
                   ) {
             // in a repeating block, but the next block doesn't match anymore, or we're at the end block
             in_repeated_block = false;
         }
 
         if (in_repeated_block == false) {
-            PrintAndLogEx(INFO, "%4d | %s "
+
+            char lck[16] = {0};
+            if (tag->locks[i]) {
+                snprintf(lck, sizeof(lck), _RED_("%d"), tag->locks[i]);
+            } else {
+                snprintf(lck, sizeof(lck), "%d", tag->locks[i]);
+            }
+
+            PrintAndLogEx(INFO, "%4d | %s| %s | %s"
                           , i
-                          , sprint_hex_ascii(blk, blocksize)
-                          , blocksize
+                      , sprint_hex(&tag->data[i * tag->bytesPerPage], tag->bytesPerPage)
+                      , lck
+                      , sprint_ascii(&tag->data[i * tag->bytesPerPage], tag->bytesPerPage)
                          );
         }
     }
+}
 
-    if (bytes % blocksize != 0)  {
-        // If there is something left over print it too
-        // This will have a broken layout, but should not happen anyway
-        PrintAndLogEx(INFO, "%4d | %s "
-                      , blocks
-                      , sprint_hex_ascii(data + (blocks * blocksize)
-                                         , bytes % blocksize)
-                     );
+static void print_tag_15693(iso15_tag_t *tag, bool dense_output, bool verbose) {
+    if (verbose) {
+        PrintAndLogEx(NORMAL, "");
+        PrintAndLogEx(INFO, "--- " _CYAN_("Tag Information") " --%.*s", (tag->bytesPerPage * 3), dashes);
+        PrintAndLogEx(SUCCESS, "UID... " _GREEN_("%s"), iso15693_sprintUID(NULL, tag->uid));
+        PrintAndLogEx(SUCCESS, "TYPE.. " _YELLOW_("%s"), getTagInfo_15(tag->uid));
+        PrintAndLogEx(SUCCESS, "   - DSFID.......... 0x%02X", tag->dsfid);
+        PrintAndLogEx(SUCCESS, "   - AFI............ 0x%02X", tag->afi);
+        PrintAndLogEx(SUCCESS, "   - IC reference... 0x%02X", tag->ic);
+        PrintAndLogEx(SUCCESS, "   - Tag memory layout (vendor dependent)");
+        PrintAndLogEx(SUCCESS, "        " _YELLOW_("%u") " bytes/blocks x " _YELLOW_("%u") " blocks", tag->bytesPerPage, tag->pagesCount);
     }
 
-    print_hrule(blocksize);
     PrintAndLogEx(NORMAL, "");
-}
 
-static void print_emltag_info_15693(iso15_tag_t *tag) {
-    PrintAndLogEx(SUCCESS, "    TYPE... " _YELLOW_("%s"), getTagInfo_15(tag->uid));
-    PrintAndLogEx(SUCCESS, "     UID... " _GREEN_("%s"), iso15693_sprintUID(NULL, tag->uid));
-    PrintAndLogEx(SUCCESS, "     - DSFID         [0x%02X]", tag->dsfid);
-    PrintAndLogEx(SUCCESS, "     - AFI           [0x%02X]", tag->afi);
-    PrintAndLogEx(SUCCESS, "     - IC reference  [0x%02X]", tag->ic);
-    PrintAndLogEx(SUCCESS, "     - Tag memory layout");
-    PrintAndLogEx(SUCCESS, "           %u bytes/blocks x %u blocks", tag->bytesPerPage, tag->pagesCount);
-}
+    if ((tag->bytesPerPage == 0) || (tag->pagesCount == 0)) {
+        PrintAndLogEx(INFO, "Tag is empty!");
+        return;
+    }
 
-static void print_emltag_15693(iso15_tag_t *tag, bool dense_output) {
+    PrintAndLogEx(INFO, "--- " _CYAN_("Tag Memory") " -------%.*s", (tag->bytesPerPage *3), dashes);
     PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(INFO, "--- " _CYAN_("Emulator Tag Information") " ---------------------------");
-
-    print_emltag_info_15693(tag);
-
-    print_blocks_15693(tag->data, (tag->pagesCount * tag->bytesPerPage),
-                       tag->bytesPerPage, dense_output);
+    print_blocks_15693(tag, dense_output);
+    print_hrule(tag->bytesPerPage);
+    PrintAndLogEx(NORMAL, "");
 }
 
 static int CmdHF15EView(const char *Cmd) {
@@ -1400,7 +1411,7 @@ static int CmdHF15EView(const char *Cmd) {
         return PM3_ETIMEOUT;
     }
 
-    print_emltag_15693((iso15_tag_t *)dump, dense_output);
+    print_tag_15693((iso15_tag_t *)dump, dense_output, true);
 
     free(dump);
     return PM3_SUCCESS;
@@ -1467,7 +1478,7 @@ static int CmdHF15Sim(const char *Cmd) {
         PrintAndLogEx(SUCCESS, "Start simulating UID... " _YELLOW_("%s"), iso15693_sprintUID(NULL, resp.data.asBytes));
     }
 
-    PrintAndLogEx(INFO, "Press " _YELLOW_("`pm3-button`") " to abort simulation");
+    PrintAndLogEx(INFO, "Press " _GREEN_("pm3 button") " to abort simulation");
 
     clearCommandBuffer();
     SendCommandNG(CMD_HF_ISO15693_SIMULATE, (uint8_t *)&payload, sizeof(payload));
@@ -1674,6 +1685,7 @@ static int CmdHF15WriteDsfid(const char *Cmd) {
 
     if (unaddressed == false) {
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 PrintAndLogEx(WARNING, "no tag found");
                 free(packet);
@@ -1688,7 +1700,7 @@ static int CmdHF15WriteDsfid(const char *Cmd) {
             packet->rawlen += uidlen;
         }
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     // dsfid
@@ -1733,17 +1745,18 @@ static int CmdHF15Dump(const char *Cmd) {
                   "hf 15 dump -u E011223344556677 -f hf-15-my-dump.bin"
                  );
 
-    void *argtable[6 + 5] = {0};
+    void *argtable[6 + 6] = {0};
     uint8_t arglen = arg_add_default(argtable);
-    argtable[arglen++] = arg_str0("f", "file", "<fn>", "Specify a filename for dump file"),
-                         argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)"),
-                                              argtable[arglen++] = arg_lit0(NULL, "ns", "no save to file"),
-                                                      argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
+    argtable[arglen++] = arg_str0("f", "file", "<fn>", "Specify a filename for dump file");
+    argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)");
+    argtable[arglen++] = arg_lit0(NULL, "ns", "no save to file");
+    argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
+    argtable[arglen++] = arg_lit0("z", "dense", "dense dump output style");
     argtable[arglen++] = arg_param_end;
 
     CLIExecWithReturn(ctx, Cmd, argtable, true);
 
-    uint8_t uid[HF15_UID_LENGTH];
+    uint8_t uid[HF15_UID_LENGTH] = {0};
     int uidlen = 0;
     CLIGetHexWithReturn(ctx, 1, uid, &uidlen);
 
@@ -1759,6 +1772,7 @@ static int CmdHF15Dump(const char *Cmd) {
     int blocksize = arg_get_int_def(ctx, 7, 4);
     bool no_save = arg_get_lit(ctx, 8);
     bool verbose = arg_get_lit(ctx, 9);
+    bool dense_output = arg_get_lit(ctx, 10);
     CLIParserFree(ctx);
 
     // sanity checks
@@ -1785,8 +1799,8 @@ static int CmdHF15Dump(const char *Cmd) {
         return PM3_EMALLOC;
     }
 
+    // struct of ISO15693 tag memory (new file format)
     iso15_tag_t *tag = (iso15_tag_t *)calloc(1, sizeof(iso15_tag_t));
-
     if (tag == NULL) {
         PrintAndLogEx(FAILED, "failed to allocate memory");
         return PM3_EMALLOC;
@@ -1800,6 +1814,7 @@ static int CmdHF15Dump(const char *Cmd) {
     if (unaddressed == false) {
         // default fallback to scan for tag. Overriding unaddress parameter
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 free(packet);
                 PrintAndLogEx(WARNING, "no tag found");
@@ -1813,7 +1828,7 @@ static int CmdHF15Dump(const char *Cmd) {
         packet->rawlen += HF15_UID_LENGTH;
         used_uid = true;
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     AddCrc15(packet->raw,  packet->rawlen);
@@ -1834,13 +1849,8 @@ static int CmdHF15Dump(const char *Cmd) {
         return PM3_ETIMEOUT;
     }
 
-    if (resp.status == PM3_ETEAROFF) {
-        return resp.status;
-    }
-
     if (resp.length < 2) {
         PrintAndLogEx(WARNING, "iso15693 card doesn't answer to systeminfo command (%d)", resp.length);
-        PrintAndLogEx(WARNING, "%%d)", resp.length);
         return PM3_EWRONGANSWER;
     }
 
@@ -1870,10 +1880,6 @@ static int CmdHF15Dump(const char *Cmd) {
 
     if (d[1] & 0x08) {
         tag->ic = d[dCpt++];
-    }
-
-    if (verbose) {
-        print_emltag_info_15693(tag);
     }
 
     // add lenght for blockno (1)
@@ -1945,36 +1951,15 @@ static int CmdHF15Dump(const char *Cmd) {
     free(packet);
     DropField();
 
+    // done reading tag memory
+
     if (tag->bytesPerPage != blocksize) {
         PrintAndLogEx(NORMAL, "");
-        PrintAndLogEx(INFO, _YELLOW_("%u") " byte block length detected, called with " _YELLOW_("%d"), tag->bytesPerPage, blocksize);
+        PrintAndLogEx(INFO, _YELLOW_("%u") " bytes block length detected, called with " _YELLOW_("%d"), tag->bytesPerPage, blocksize);
+        PrintAndLogEx(INFO, "Using %u ...", tag->bytesPerPage);
     }
 
-    PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(INFO, "----------- " _CYAN_("Tag Memory") " ---------------");
-    PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(INFO, "block#   | data        |lck| ascii");
-    PrintAndLogEx(INFO, "---------+-------------+---+-------");
-
-    for (int i = 0; i < blocknum; i++) {
-
-        char lck[16] = {0};
-        if (tag->locks[i]) {
-            snprintf(lck, sizeof(lck), _RED_("%d"), tag->locks[i]);
-        } else {
-            snprintf(lck, sizeof(lck), "%d", tag->locks[i]);
-        }
-
-        PrintAndLogEx(INFO, "%3d/0x%02X | %s| %s | %s"
-                      , i
-                      , i
-                      , sprint_hex(&tag->data[i * tag->bytesPerPage], tag->bytesPerPage)
-                      , lck
-                      , sprint_ascii(&tag->data[i * tag->bytesPerPage], tag->bytesPerPage)
-                     );
-    }
-    PrintAndLogEx(INFO, "---------+-------------+---+-------");
-    PrintAndLogEx(NORMAL, "");
+    print_tag_15693(tag, dense_output, verbose);
 
     if (no_save) {
         PrintAndLogEx(INFO, "Called with no save option");
@@ -2086,6 +2071,7 @@ static int CmdHF15Raw(const char *Cmd) {
         PacketResponseNG resp;
         if (WaitForResponseTimeout(CMD_HF_ISO15693_COMMAND, &resp, 2000)) {
             if (resp.status == PM3_ETEAROFF) {
+                PrintAndLogEx(INFO, "Tear off triggered");
                 return resp.status;
             }
 
@@ -2122,8 +2108,8 @@ static int CmdHF15Readmulti(const char *Cmd) {
     uint8_t arglen = arg_add_default(argtable);
     argtable[arglen++] = arg_int1("b", NULL, "<dec>", "first page number (0-255)");
     argtable[arglen++] = arg_int1(NULL, "cnt", "<dec>", "number of pages (1-6)");
-    argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)"),
-                         argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
+    argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)");
+    argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
     argtable[arglen++] = arg_param_end;
 
     CLIExecWithReturn(ctx, Cmd, argtable, false);
@@ -2182,6 +2168,7 @@ static int CmdHF15Readmulti(const char *Cmd) {
 
     if (unaddressed == false) {
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 free(packet);
                 PrintAndLogEx(WARNING, "no tag found");
@@ -2195,7 +2182,7 @@ static int CmdHF15Readmulti(const char *Cmd) {
         packet->rawlen += HF15_UID_LENGTH;
 
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     if (verbose) {
@@ -2279,8 +2266,8 @@ static int CmdHF15Readblock(const char *Cmd) {
     void *argtable[6 + 4] = {0};
     uint8_t arglen = arg_add_default(argtable);
     argtable[arglen++] = arg_int1("b", "blk", "<dec>", "page number (0-255)");
-    argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)"),
-                         argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
+    argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)");
+    argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
     argtable[arglen++] = arg_param_end;
 
     CLIExecWithReturn(ctx, Cmd, argtable, false);
@@ -2335,6 +2322,7 @@ static int CmdHF15Readblock(const char *Cmd) {
     if (unaddressed == false) {
         // default fallback to scan for tag. Overriding unaddress parameter
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 free(packet);
                 PrintAndLogEx(WARNING, "no tag found");
@@ -2348,7 +2336,7 @@ static int CmdHF15Readblock(const char *Cmd) {
         packet->rawlen += HF15_UID_LENGTH;
 
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     if (verbose) {
@@ -2531,6 +2519,7 @@ static int CmdHF15Write(const char *Cmd) {
     // overriding unaddress parameter :)
     if (unaddressed == false) {
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 PrintAndLogEx(WARNING, "no tag found");
                 return PM3_EINVARG;
@@ -2539,7 +2528,7 @@ static int CmdHF15Write(const char *Cmd) {
             reverse_array(uid, HF15_UID_LENGTH);
         }
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     // TI needs OPTION
@@ -2573,10 +2562,9 @@ static int CmdHF15Restore(const char *Cmd) {
 
     void *argtable[6 + 5] = {0};
     uint8_t arglen = arg_add_default(argtable);
-    argtable[arglen++] = arg_str0("f", "file", "<fn>", "Specify a filename for dump file"),
-                         argtable[arglen++] = arg_int0("r", "retry", "<dec>", "number of retries (def 3)"),
-                                              argtable[arglen++] = arg_int0(NULL, "bs", "<dec>", "block size (def 4)"),
-                                                      argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
+    argtable[arglen++] = arg_str0("f", "file", "<fn>", "Specify a filename for dump file");
+    argtable[arglen++] = arg_int0("r", "retry", "<dec>", "number of retries (def 3)");
+    argtable[arglen++] = arg_lit0("v", "verbose", "verbose output");
     argtable[arglen++] = arg_param_end;
     CLIExecWithReturn(ctx, Cmd, argtable, true);
 
@@ -2594,8 +2582,7 @@ static int CmdHF15Restore(const char *Cmd) {
     CLIParamStrToBuf(arg_get_str(ctx, 6), (uint8_t *)filename, FILE_PATH_SIZE, &fnlen);
 
     uint32_t retries = arg_get_u32_def(ctx, 7, 3);
-    int blocksize = arg_get_int_def(ctx, 8, 4);
-    bool verbose = arg_get_lit(ctx, 9);
+    bool verbose = arg_get_lit(ctx, 8);
     CLIParserFree(ctx);
 
     // sanity checks
@@ -2609,11 +2596,6 @@ static int CmdHF15Restore(const char *Cmd) {
         return PM3_EINVARG;
     }
 
-    if (blocksize < 4) {
-        PrintAndLogEx(WARNING, "Blocksize too small, using default 4 bytes");
-        blocksize = 4;
-    }
-
     // default fallback to scan for tag.
     // overriding unaddress parameter :)
     if (uidlen != HF15_UID_LENGTH) {
@@ -2622,6 +2604,7 @@ static int CmdHF15Restore(const char *Cmd) {
 
     if (unaddressed == false) {
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 PrintAndLogEx(WARNING, "no tag found");
                 return PM3_EINVARG;
@@ -2630,10 +2613,8 @@ static int CmdHF15Restore(const char *Cmd) {
             reverse_array(uid, HF15_UID_LENGTH);
         }
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
-
-    PrintAndLogEx(INFO, "Using block size... " _YELLOW_("%d"), blocksize);
 
     // TI needs OPTION
     if (uid[7] == 0xE0 && uid[6] == 0x07) {
@@ -2644,18 +2625,33 @@ static int CmdHF15Restore(const char *Cmd) {
     }
 
     // read dump file
-    uint8_t *dump = NULL;
+    iso15_tag_t *tag = NULL;
     size_t bytes_read = 0;
     // blocksize bytes * 256 blocks.  Should be enough
-    int res = pm3_load_dump(filename, (void **)&dump, &bytes_read, (blocksize * 256));
+    int res = pm3_load_dump(filename, (void **)&tag, &bytes_read, sizeof(iso15_tag_t));
     if (res != PM3_SUCCESS) {
         return res;
     }
 
-    if ((bytes_read % blocksize) != 0) {
-        PrintAndLogEx(WARNING, "datalen %zu isn't dividable with blocksize %d", bytes_read, blocksize);
-        free(dump);
-        return PM3_ESOFT;
+    if (bytes_read != sizeof(iso15_tag_t)) {
+        PrintAndLogEx(FAILED, "Memory image is not matching tag structure.");
+        free(tag);
+        return PM3_EINVARG;
+    }
+    if (bytes_read == 0) {
+        PrintAndLogEx(FAILED, "Memory image empty.");
+        free(tag);
+        return PM3_EINVARG;
+    }
+
+    if ((tag->pagesCount > ISO15693_TAG_MAX_PAGES) ||
+            ((tag->pagesCount * tag->bytesPerPage) > ISO15693_TAG_MAX_SIZE) ||
+            (tag->pagesCount == 0) ||
+            (tag->bytesPerPage == 0)) {
+        PrintAndLogEx(FAILED, "Tag size error: pagesCount=%d, bytesPerPage=%d",
+                      tag->pagesCount, tag->bytesPerPage);
+        free(tag);
+        return PM3_EINVARG;
     }
 
     PrintAndLogEx(INFO, "Restoring data blocks");
@@ -2670,19 +2666,18 @@ static int CmdHF15Restore(const char *Cmd) {
     int retval = PM3_SUCCESS;
     size_t bytes = 0;
     uint16_t i = 0;
-    while (bytes < bytes_read) {
-
-        uint8_t data[blocksize];
+    uint8_t *data = calloc(tag->bytesPerPage, sizeof(uint8_t));
+    uint32_t tried = 0;
+    while (bytes < (tag->pagesCount * tag->bytesPerPage)) {
 
         // copy over the data to the request
-        memcpy(data, dump + bytes, blocksize);
+        memcpy(data, &tag->data[bytes], tag->bytesPerPage);
 
-        uint32_t tried = 0;
         for (tried = 0; tried < retries; tried++) {
 
-            retval = hf_15_write_blk(&pm3flags, flags, uid, fast, i, data, blocksize);
+            retval = hf_15_write_blk(&pm3flags, flags, uid, fast
+                                     , i, data, tag->bytesPerPage);
             if (retval == PM3_SUCCESS) {
-
                 PrintAndLogEx(INPLACE, "blk %3d", i);
 
                 if (i == 0) {
@@ -2700,24 +2695,20 @@ static int CmdHF15Restore(const char *Cmd) {
         }
 
         if (tried >= retries) {
-            free(dump);
+            free(data);
+            free(tag);
             PrintAndLogEx(NORMAL, "");
             PrintAndLogEx(FAILED, "Too many retries (" _RED_("fail") " )");
             DropField();
             return retval;
         }
 
-        bytes += blocksize;
+        bytes += tag->bytesPerPage;
         i++;
-
-        if (retval == PM3_EOUTOFBOUND) {
-            // we only get this when we reached end of tag memory
-            // break out of while loop
-            break;
-        }
     }
 
-    free(dump);
+    free(data);
+    free(tag);
     DropField();
 
     PrintAndLogEx(NORMAL, "");
@@ -3289,17 +3280,37 @@ static int CmdHF15View(const char *Cmd) {
     bool dense_output = (g_session.dense_output || arg_get_lit(ctx, 2));
     CLIParserFree(ctx);
 
-    // read dump file
-    uint8_t *dump = NULL;
-    size_t bytes_read = CARD_MEMORY_SIZE;
-    int res = pm3_load_dump(filename, (void **)&dump, &bytes_read, CARD_MEMORY_SIZE);
+    iso15_tag_t *tag = NULL;
+    size_t bytes_read = 0;
+    int res = pm3_load_dump(filename, (void **)&tag, &bytes_read, sizeof(iso15_tag_t));
     if (res != PM3_SUCCESS) {
         return res;
     }
 
-    print_blocks_15693(dump, bytes_read, 4, dense_output);
+    if (bytes_read != sizeof(iso15_tag_t)) {
+        PrintAndLogEx(FAILED, "Memory image is not matching tag structure.");
+        free(tag);
+        return PM3_EINVARG;
+    }
+    if (bytes_read == 0) {
+        PrintAndLogEx(FAILED, "Memory image empty.");
+        free(tag);
+        return PM3_EINVARG;
+    }
 
-    free(dump);
+    if ((tag->pagesCount > ISO15693_TAG_MAX_PAGES) ||
+            ((tag->pagesCount * tag->bytesPerPage) > ISO15693_TAG_MAX_SIZE) ||
+            (tag->pagesCount == 0) ||
+            (tag->bytesPerPage == 0)) {
+        PrintAndLogEx(FAILED, "Tag size error: pagesCount=%d, bytesPerPage=%d",
+                      tag->pagesCount, tag->bytesPerPage);
+        free(tag);
+        return PM3_EINVARG;
+    }
+
+    print_tag_15693(tag, dense_output, true);
+
+    free(tag);
     return PM3_SUCCESS;
 }
 
@@ -3345,6 +3356,7 @@ static int CmdHF15Wipe(const char *Cmd) {
     // overriding unaddress parameter :)
     if (unaddressed == false) {
         if (scan) {
+            PrintAndLogEx(INFO, "Using scan mode");
             if (getUID(verbose, false, uid) != PM3_SUCCESS) {
                 PrintAndLogEx(WARNING, "no tag found");
                 return PM3_EINVARG;
@@ -3353,7 +3365,7 @@ static int CmdHF15Wipe(const char *Cmd) {
             reverse_array(uid, HF15_UID_LENGTH);
         }
     } else {
-        PrintAndLogEx(SUCCESS, "Using unaddressed mode");
+        PrintAndLogEx(INFO, "Using unaddressed mode");
     }
 
     // TI needs OPTION
