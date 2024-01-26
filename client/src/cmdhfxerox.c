@@ -404,10 +404,12 @@ static int xerox_select_card(iso14b_card_select_t *card) {
         SendCommandNG(CMD_HF_ISO14443B_COMMAND, (uint8_t *)&packet, sizeof(iso14b_raw_cmd_t));
         PacketResponseNG resp;
         if (WaitForResponseTimeout(CMD_HF_ISO14443B_COMMAND, &resp, TIMEOUT) == false) {
-            if (resp.status == PM3_SUCCESS) {
-                memcpy(card, (iso14b_card_select_t *)resp.data.asBytes, sizeof(iso14b_card_select_t));
-            }
-            return resp.length;
+            continue;
+        }
+
+        if (resp.status == PM3_SUCCESS) {
+            memcpy(card, (iso14b_card_select_t *)resp.data.asBytes, sizeof(iso14b_card_select_t));
+            return resp.status;
         }
     } // retry
 
@@ -636,7 +638,7 @@ static int read_xerox_block(iso14b_card_select_t *card, uint8_t blockno, uint8_t
     // set up the read command
     packet->flags = (ISO14B_CONNECT | ISO14B_APPEND_CRC | ISO14B_RAW);
     packet->raw[packet->rawlen++] = 0x02;
-    packet->raw[packet->rawlen++] = XEROX_READ_MEM;
+    packet->raw[packet->rawlen++] = ISO14443B_XEROX_READ_BLK;
 
     // uid
     memcpy(packet->raw + packet->rawlen, card->uid, card->uidlen);
